@@ -4,6 +4,7 @@ import streamlit as st
 import easyocr
 import numpy as np
 from PIL import Image
+import re
 
 # ---------------------------------
 # НАСТРОЙКИ НА СТРАНИЦАТА
@@ -35,31 +36,27 @@ harmful_ingredients = {
         "en": "Monosodium Glutamate",
         "danger": "Може да предизвика главоболие и алергии."
     },
-
     "E250": {
         "bg": "Натриев нитрит",
         "en": "Sodium Nitrite",
         "danger": "Използва се в колбаси и може да бъде вреден."
     },
-
     "E951": {
         "bg": "Аспартам",
         "en": "Aspartame",
         "danger": "Изкуствен подсладител."
     },
-
     "PALM OIL": {
         "bg": "Палмово масло",
         "en": "Palm Oil",
+        # FIX 4: търсим и "PALMOIL", "PALM-OIL" чрез regex по-долу
         "danger": "Съдържа наситени мазнини."
     },
-
     "E211": {
         "bg": "Натриев бензоат",
         "en": "Sodium Benzoate",
         "danger": "Консервант, който може да бъде вреден."
     },
-
     "HYDROGENATED": {
         "bg": "Хидрогенирани мазнини",
         "en": "Hydrogenated Fats",
@@ -100,7 +97,11 @@ if option == "📁 Качване на снимка":
     )
 
     if uploaded_file is not None:
-        image = Image.open(uploaded_file)
+        # FIX 3: обработка на грешки при отваряне на изображението
+        try:
+            image = Image.open(uploaded_file).convert("RGB")
+        except Exception as e:
+            st.error(f"Грешка при зареждане на снимката: {e}")
 
 # ---------------------------------
 # КАМЕРА
@@ -111,7 +112,11 @@ if option == "📷 Камера":
     camera_photo = st.camera_input("Направете снимка")
 
     if camera_photo is not None:
-        image = Image.open(camera_photo)
+        # FIX 3: обработка на грешки при отваряне на изображението
+        try:
+            image = Image.open(camera_photo).convert("RGB")
+        except Exception as e:
+            st.error(f"Грешка при зареждане на снимката: {e}")
 
 # ---------------------------------
 # ОБРАБОТКА
@@ -119,52 +124,60 @@ if option == "📷 Камера":
 
 if image is not None:
 
-    st.image(image, caption="Избрана снимка", use_container_width=True)
+    # FIX 1: use_column_width вместо use_container_width (deprecated)
+    st.image(image, caption="Избрана снимка", use_column_width=True)
 
     if st.button("🔍 Анализирай"):
 
         with st.spinner("EasyOCR разпознава текста..."):
 
-            # Превръщане в numpy масив
-            image_np = np.array(image)
+            try:
+                # Превръщане в numpy масив
+                image_np = np.array(image)
 
-            # OCR
-            results = reader.readtext(image_np, detail=0)
+                # OCR
+                results = reader.readtext(image_np, detail=0)
 
-            # Обединяване на текста
-            text = " ".join(results)
+                # FIX 2: филтриране на празни стрингове преди join
+                results = [r.strip() for r in results if r.strip()]
 
-            st.subheader("📄 Разпознат текст")
-            st.write(text)
+                # Обединяване на текста
+                text = " ".join(results)
 
-            # ---------------------------------
-            # ТЪРСЕНЕ НА ВРЕДНИ СЪСТАВКИ
-            # ---------------------------------
+                st.subheader("📄 Разпознат текст")
+                st.write(text if text else "Не е разпознат текст.")
 
-            st.subheader("⚠️ Открити вредни съставки")
+                # ---------------------------------
+                # ТЪРСЕНЕ НА ВРЕДНИ СЪСТАВКИ
+                # ---------------------------------
 
-            text_upper = text.upper()
+                st.subheader("⚠️ Открити вредни съставки")
 
-            found = False
+                text_upper = text.upper()
 
-            for ingredient, info in harmful_ingredients.items():
+                found = False
 
-                if ingredient in text_upper:
+                for ingredient, info in harmful_ingredients.items():
 
-                    found = True
+                    # FIX 4: използваме regex за по-гъвкаво търсене
+                    # (улавя PALM OIL, PALMOIL, PALM-OIL и т.н.)
+                    pattern = re.sub(r'\s+', r'[\\s\\-]?', re.escape(ingredient))
 
-                    st.error(
-                        f"""
-🇧🇬 {info['bg']}
+                    if re.search(pattern, text_upper):
 
-🇬🇧 {info['en']}
+                        found = True
 
-⚠️ {info['danger']}
-"""
-                    )
+                        st.error(
+                            f"🇧🇬 {info['bg']}\n\n"
+                            f"🇬🇧 {info['en']}\n\n"
+                            f"⚠️ {info['danger']}"
+                        )
 
-            if not found:
-                st.success("Няма открити вредни съставки.")
+                if not found:
+                    st.success("Няма открити вредни съставки.")
+
+            except Exception as e:
+                st.error(f"Грешка при анализа: {e}")
 
 # ---------------------------------
 # ИНФОРМАЦИЯ
