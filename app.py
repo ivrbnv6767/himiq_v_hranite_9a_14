@@ -4,178 +4,215 @@ import streamlit as st
 import easyocr
 import numpy as np
 from PIL import Image
+import re
 
-# -----------------------------------
+# ---------------------------------
 # НАСТРОЙКИ НА СТРАНИЦАТА
-# -----------------------------------
+# ---------------------------------
 
 st.set_page_config(
-    page_title="AI Food Scanner",
+    page_title="Скенер за вредни храни",
     page_icon="🧪",
     layout="centered"
 )
 
-# -----------------------------------
+# ---------------------------------
 # ЗАГЛАВИЕ
-# -----------------------------------
+# ---------------------------------
 
 st.title("🧪 AI Скенер за вредни съставки")
+st.write(
+    "Приложение, което използва EasyOCR и изкуствен интелект "
+    "за разпознаване на вредни съставки в храните."
+)
 
-st.write("""
-Това приложение използва:
-- Streamlit
-- EasyOCR
-- NumPy
-- Pillow
-
-за разпознаване на вредни съставки в храните.
-""")
-
-# -----------------------------------
+# ---------------------------------
 # ВРЕДНИ СЪСТАВКИ
-# -----------------------------------
+# ---------------------------------
 
-harmful = {
-    "E621": "Мононатриев глутамат",
-    "E250": "Натриев нитрит",
-    "E951": "Аспартам",
-    "E211": "Натриев бензоат",
-    "PALM OIL": "Палмово масло",
-    "HYDROGENATED": "Хидрогенирани мазнини"
+harmful_ingredients = {
+    "E621": {
+        "bg": "Мононатриев глутамат",
+        "en": "Monosodium Glutamate",
+        "danger": "Може да предизвика главоболие и алергии."
+    },
+    "E250": {
+        "bg": "Натриев нитрит",
+        "en": "Sodium Nitrite",
+        "danger": "Използва се в колбаси и може да бъде вреден."
+    },
+    "E951": {
+        "bg": "Аспартам",
+        "en": "Aspartame",
+        "danger": "Изкуствен подсладител."
+    },
+    "PALM OIL": {
+        "bg": "Палмово масло",
+        "en": "Palm Oil",
+        # FIX 4: търсим и "PALMOIL", "PALM-OIL" чрез regex по-долу
+        "danger": "Съдържа наситени мазнини."
+    },
+    "E211": {
+        "bg": "Натриев бензоат",
+        "en": "Sodium Benzoate",
+        "danger": "Консервант, който може да бъде вреден."
+    },
+    "HYDROGENATED": {
+        "bg": "Хидрогенирани мазнини",
+        "en": "Hydrogenated Fats",
+        "danger": "Повишават риска от сърдечни заболявания."
+    }
 }
 
-# -----------------------------------
-# EASYOCR
-# -----------------------------------
+# ---------------------------------
+# OCR МОДЕЛ
+# ---------------------------------
 
 @st.cache_resource
-def load_ocr():
-    return easyocr.Reader(["bg", "en"], gpu=False)
+def load_reader():
+    return easyocr.Reader(['bg', 'en'], gpu=False)
 
-reader = load_ocr()
+reader = load_reader()
 
-# -----------------------------------
+# ---------------------------------
 # ИЗБОР НА ИЗТОЧНИК
-# -----------------------------------
+# ---------------------------------
 
-choice = st.radio(
-    "Изберете:",
+option = st.radio(
+    "Изберете начин за сканиране:",
     ["📁 Качване на снимка", "📷 Камера"]
 )
 
 image = None
 
-# -----------------------------------
-# FILE UPLOAD
-# -----------------------------------
+# ---------------------------------
+# КАЧВАНЕ НА СНИМКА
+# ---------------------------------
 
-if choice == "📁 Качване на снимка":
+if option == "📁 Качване на снимка":
 
-    file = st.file_uploader(
-        "Качи снимка",
-        type=["jpg", "jpeg", "png"]
+    uploaded_file = st.file_uploader(
+        "Качете снимка на етикет",
+        type=["png", "jpg", "jpeg"]
     )
 
-    if file is not None:
-        image = Image.open(file)
+    if uploaded_file is not None:
+        # FIX 3: обработка на грешки при отваряне на изображението
+        try:
+            image = Image.open(uploaded_file).convert("RGB")
+        except Exception as e:
+            st.error(f"Грешка при зареждане на снимката: {e}")
 
-# -----------------------------------
-# CAMERA
-# -----------------------------------
+# ---------------------------------
+# КАМЕРА
+# ---------------------------------
 
-if choice == "📷 Камера":
+if option == "📷 Камера":
 
-    camera = st.camera_input("Направи снимка")
+    camera_photo = st.camera_input("Направете снимка")
 
-    if camera is not None:
-        image = Image.open(camera)
+    if camera_photo is not None:
+        # FIX 3: обработка на грешки при отваряне на изображението
+        try:
+            image = Image.open(camera_photo).convert("RGB")
+        except Exception as e:
+            st.error(f"Грешка при зареждане на снимката: {e}")
 
-# -----------------------------------
-# ПОКАЗВАНЕ НА СНИМКА
-# -----------------------------------
+# ---------------------------------
+# ОБРАБОТКА
+# ---------------------------------
 
 if image is not None:
 
-    st.image(image, caption="Избрана снимка")
+    # FIX 1: use_column_width вместо use_container_width (deprecated)
+    st.image(image, caption="Избрана снимка", use_column_width=True)
 
-    # -----------------------------------
-    # OCR БУТОН
-    # -----------------------------------
-
-    if st.button("🔍 Сканирай"):
+    if st.button("🔍 Анализирай"):
 
         with st.spinner("EasyOCR разпознава текста..."):
 
-            # PIL -> NumPy
-            img_array = np.array(image)
+            try:
+                # Превръщане в numpy масив
+                image_np = np.array(image)
 
-            # OCR
-            result = reader.readtext(
-                img_array,
-                detail=0
-            )
+                # OCR
+                results = reader.readtext(image_np, detail=0)
 
-            # Текст
-            text = " ".join(result)
+                # FIX 2: филтриране на празни стрингове преди join
+                results = [r.strip() for r in results if r.strip()]
 
-            # -----------------------------------
-            # ПОКАЗВАНЕ НА ТЕКСТА
-            # -----------------------------------
+                # Обединяване на текста
+                text = " ".join(results)
 
-            st.subheader("📄 Разпознат текст")
+                st.subheader("📄 Разпознат текст")
+                st.write(text if text else "Не е разпознат текст.")
 
-            st.write(text)
+                # ---------------------------------
+                # ТЪРСЕНЕ НА ВРЕДНИ СЪСТАВКИ
+                # ---------------------------------
 
-            # -----------------------------------
-            # ТЪРСЕНЕ НА ВРЕДНИ СЪСТАВКИ
-            # -----------------------------------
+                st.subheader("⚠️ Открити вредни съставки")
 
-            st.subheader("⚠️ Намерени вредни съставки")
+                text_upper = text.upper()
 
-            text_upper = text.upper()
+                found = False
 
-            found = False
+                for ingredient, info in harmful_ingredients.items():
 
-            for item in harmful:
+                    # FIX 4: използваме regex за по-гъвкаво търсене
+                    # (улавя PALM OIL, PALMOIL, PALM-OIL и т.н.)
+                    pattern = re.sub(r'\s+', r'[\\s\\-]?', re.escape(ingredient))
 
-                if item in text_upper:
+                    if re.search(pattern, text_upper):
 
-                    found = True
+                        found = True
 
-                    st.error(
-                        item + " → " + harmful[item]
-                    )
+                        st.error(
+                            f"🇧🇬 {info['bg']}\n\n"
+                            f"🇬🇧 {info['en']}\n\n"
+                            f"⚠️ {info['danger']}"
+                        )
 
-            if found is False:
+                if not found:
+                    st.success("Няма открити вредни съставки.")
 
-                st.success(
-                    "Няма открити вредни съставки."
-                )
+            except Exception as e:
+                st.error(f"Грешка при анализа: {e}")
 
-# -----------------------------------
+# ---------------------------------
 # ИНФОРМАЦИЯ
-# -----------------------------------
+# ---------------------------------
 
 with st.expander("ℹ️ Как работи приложението?"):
 
     st.write("""
-1. Качвате снимка
-2. EasyOCR разпознава текста
-3. Приложението търси вредни Е-та
-4. Показва резултатите
+1. Качвате снимка или използвате камера.
+2. EasyOCR разпознава текста от етикета.
+3. Приложението търси вредни Е-та и съставки.
+4. Показва предупреждения на екрана.
+""")
+
+with st.expander("📚 Използвани технологии"):
+
+    st.write("""
+- Python
+- Streamlit
+- EasyOCR
+- Pillow
+- NumPy
 """)
 
 with st.expander("🧪 Примерни вредни съставки"):
 
-    for item in harmful:
+    for ingredient, info in harmful_ingredients.items():
 
         st.write(
-            item + " → " + harmful[item]
+            f"• {ingredient} → {info['bg']} / {info['en']}"
         )
 
-# -----------------------------------
+# ---------------------------------
 # FOOTER
-# -----------------------------------
+# ---------------------------------
 
 st.markdown("---")
 
