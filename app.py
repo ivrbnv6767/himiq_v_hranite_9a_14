@@ -1,10 +1,3 @@
-# app.py
-import streamlit as st
-import easyocr
-import numpy as np
-from PIL import Image
-import pandas as pd
-import re
 
 # -----------------------------------
 # Настройки на страницата
