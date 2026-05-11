@@ -5,32 +5,37 @@ import easyocr
 import numpy as np
 from PIL import Image
 
-# ---------------------------------
-# НАСТРОЙКИ
-# ---------------------------------
+# -----------------------------------
+# НАСТРОЙКИ НА СТРАНИЦАТА
+# -----------------------------------
 
 st.set_page_config(
-    page_title="AI Скенер за вредни храни",
+    page_title="AI Food Scanner",
     page_icon="🧪",
     layout="centered"
 )
 
-# ---------------------------------
+# -----------------------------------
 # ЗАГЛАВИЕ
-# ---------------------------------
+# -----------------------------------
 
 st.title("🧪 AI Скенер за вредни съставки")
 
-st.write(
-    "Приложение, което използва EasyOCR "
-    "за разпознаване на вредни съставки."
-)
+st.write("""
+Това приложение използва:
+- Streamlit
+- EasyOCR
+- NumPy
+- Pillow
 
-# ---------------------------------
+за разпознаване на вредни съставки в храните.
+""")
+
+# -----------------------------------
 # ВРЕДНИ СЪСТАВКИ
-# ---------------------------------
+# -----------------------------------
 
-harmful_ingredients = {
+harmful = {
     "E621": "Мононатриев глутамат",
     "E250": "Натриев нитрит",
     "E951": "Аспартам",
@@ -39,119 +44,141 @@ harmful_ingredients = {
     "HYDROGENATED": "Хидрогенирани мазнини"
 }
 
-# ---------------------------------
-# OCR МОДЕЛ
-# ---------------------------------
+# -----------------------------------
+# EASYOCR
+# -----------------------------------
 
 @st.cache_resource
-def load_reader():
+def load_ocr():
     return easyocr.Reader(["bg", "en"], gpu=False)
 
-reader = load_reader()
+reader = load_ocr()
 
-# ---------------------------------
-# ИЗБОР НА СНИМКА
-# ---------------------------------
+# -----------------------------------
+# ИЗБОР НА ИЗТОЧНИК
+# -----------------------------------
 
-option = st.radio(
-    "Изберете начин:",
-    ["Качване на снимка", "Камера"]
+choice = st.radio(
+    "Изберете:",
+    ["📁 Качване на снимка", "📷 Камера"]
 )
 
 image = None
 
-# ---------------------------------
+# -----------------------------------
 # FILE UPLOAD
-# ---------------------------------
+# -----------------------------------
 
-if option == "Качване на снимка":
+if choice == "📁 Качване на снимка":
 
-    uploaded_file = st.file_uploader(
+    file = st.file_uploader(
         "Качи снимка",
-        type=["png", "jpg", "jpeg"]
+        type=["jpg", "jpeg", "png"]
     )
 
-    if uploaded_file is not None:
-        image = Image.open(uploaded_file)
+    if file is not None:
+        image = Image.open(file)
 
-# ---------------------------------
+# -----------------------------------
 # CAMERA
-# ---------------------------------
+# -----------------------------------
 
-if option == "Камера":
+if choice == "📷 Камера":
 
-    camera_photo = st.camera_input("Направи снимка")
+    camera = st.camera_input("Направи снимка")
 
-    if camera_photo is not None:
-        image = Image.open(camera_photo)
+    if camera is not None:
+        image = Image.open(camera)
 
-# ---------------------------------
-# ПОКАЗВАНЕ НА СНИМКАТА
-# ---------------------------------
+# -----------------------------------
+# ПОКАЗВАНЕ НА СНИМКА
+# -----------------------------------
 
 if image is not None:
 
     st.image(image, caption="Избрана снимка")
 
-    if st.button("🔍 Анализирай"):
+    # -----------------------------------
+    # OCR БУТОН
+    # -----------------------------------
 
-        with st.spinner("Сканиране..."):
+    if st.button("🔍 Сканирай"):
+
+        with st.spinner("EasyOCR разпознава текста..."):
 
             # PIL -> NumPy
             img_array = np.array(image)
 
             # OCR
-            results = reader.readtext(img_array, detail=0)
+            result = reader.readtext(
+                img_array,
+                detail=0
+            )
 
             # Текст
-            extracted_text = " ".join(results)
+            text = " ".join(result)
+
+            # -----------------------------------
+            # ПОКАЗВАНЕ НА ТЕКСТА
+            # -----------------------------------
 
             st.subheader("📄 Разпознат текст")
-            st.write(extracted_text)
 
-            # ---------------------------------
+            st.write(text)
+
+            # -----------------------------------
             # ТЪРСЕНЕ НА ВРЕДНИ СЪСТАВКИ
-            # ---------------------------------
+            # -----------------------------------
 
             st.subheader("⚠️ Намерени вредни съставки")
 
-            text_upper = extracted_text.upper()
+            text_upper = text.upper()
 
             found = False
 
-            for ingredient in harmful_ingredients:
+            for item in harmful:
 
-                if ingredient in text_upper:
+                if item in text_upper:
 
                     found = True
 
                     st.error(
-                        ingredient + " → " +
-                        harmful_ingredients[ingredient]
+                        item + " → " + harmful[item]
                     )
 
-            if not found:
-                st.success("Няма открити вредни съставки.")
+            if found is False:
 
-# ---------------------------------
+                st.success(
+                    "Няма открити вредни съставки."
+                )
+
+# -----------------------------------
 # ИНФОРМАЦИЯ
-# ---------------------------------
+# -----------------------------------
 
-with st.expander("ℹ️ Използвани технологии"):
+with st.expander("ℹ️ Как работи приложението?"):
 
     st.write("""
-    - Python
-    - Streamlit
-    - EasyOCR
-    - NumPy
-    - Pillow
-    """)
+1. Качвате снимка
+2. EasyOCR разпознава текста
+3. Приложението търси вредни Е-та
+4. Показва резултатите
+""")
 
 with st.expander("🧪 Примерни вредни съставки"):
 
-    for ingredient in harmful_ingredients:
+    for item in harmful:
 
         st.write(
-            ingredient + " → " +
-            harmful_ingredients[ingredient]
+            item + " → " + harmful[item]
         )
+
+# -----------------------------------
+# FOOTER
+# -----------------------------------
+
+st.markdown("---")
+
+st.caption(
+    "Проект: Как ИИ помага да разберем химията на храните"
+)
