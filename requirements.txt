@@ -1,6 +1,6 @@
-streamlit
-easyocr
-numpy
-pillow
-torch
-torchvision
+streamlit==1.32.2
+easyocr==1.7.1
+numpy==1.26.4
+pillow==10.2.0
+torch==2.2.1
+torchvision==0.17.1
