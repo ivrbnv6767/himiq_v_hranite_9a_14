@@ -1,80 +1,92 @@
 import streamlit as st
 import easyocr
-from PIL import Image
 import numpy as np
+from PIL import Image
 
-# Настройка на страницата
-st.set_page_config(page_title="Food AI Scanner", page_icon="🧪")
+# 1. Списък с вредни/спорни съставки (на български и английски)
+# Можеш да допълваш този списък според нуждите си
+HARMFUL_INGREDIENTS = [
+    "e621", "е621", # Включени са латинско 'e' и кирилско 'е'
+    "палмово масло", "palm oil", "палмова мазнина",
+    "мононатриев глутамат", "monosodium glutamate", "msg",
+    "аспартам", "aspartame", "e951", "е951",
+    "високофруктозен царевичен сироп", "high fructose corn syrup",
+    "натриев нитрит", "sodium nitrite", "e250", "е250",
+    "bha", "bht", "e320", "e321", "е320", "е321",
+    "сукралоза", "sucralose", "e955", "е955",
+    "карагенан", "carrageenan", "e407", "е407"
+]
 
-# 1. База данни с вредни съставки (Е-номера и думи)
-harmful_ingredients = {
-    "E621": "Мононатриев глутамат (Овкусител) - Може да причини главоболие и алергии.",
-    "E407": "Карагенан (Сгъстител) - Свързва се с възпаления на стомашно-чревния тракт.",
-    "E250": "Натриев нитрит (Консервант) - Потенциално канцерогенен в месни продукти.",
-    "E951": "Аспартам (Подсладител) - Изкуствен подсладител, избягвайте при чувствителност.",
-    "E450": "Дифосфати - Прекомерната употреба вреди на бъбреците и костите.",
-    "ПАЛМОВО МАСЛО": "Палмово масло - Високо съдържание на наситени мазнини.",
-    "PALM OIL": "Palm Oil - High saturated fat content.",
-    "TRANS FAT": "Трансмазнини - Вредни за сърдечно-съдовата система.",
-}
-
-# 2. Инициализиране на EasyOCR (Български и Английски)
+# 2. Кеширане на OCR модела, за да не се зарежда при всяко натискане на бутон
 @st.cache_resource
-def load_ocr():
+def load_reader():
+    # Зареждаме моделите за български ('bg') и английски ('en')
     return easyocr.Reader(['bg', 'en'])
 
-reader = load_ocr()
+reader = load_reader()
 
-# Интерфейс
-st.title("🧪 AI Химия на храните")
-st.subheader("Сканирай етикет за вредни съставки")
-
-# Опции за качване
-source = st.radio("Избери източник:", ["Качи снимка", "Използвай камера"])
-uploaded_file = None
-
-if source == "Качи снимка":
-    uploaded_file = st.file_uploader("Избери файл...", type=["jpg", "jpeg", "png"])
-else:
-    uploaded_file = st.camera_input("Снимай етикета")
-
-if uploaded_file is not None:
-    # Показване на снимката
-    image = Image.open(uploaded_file)
-    st.image(image, caption='Качен етикет', use_container_width=True)
+# 3. Функция за търсене на вредни съставки в текста
+def analyze_text(extracted_text):
+    found_harmful = []
+    # Обединяваме целия извлечен текст и го правим с малки букви за по-лесно търсене
+    text_lower = " ".join(extracted_text).lower()
     
-    with st.spinner('Анализирам текста с ИИ...'):
-        # Конвертиране за OCR
-        img_np = np.array(image)
-        results = reader.readtext(img_np, detail=0)
-        full_text = " ".join(results).upper()
-        
-        st.write("---")
-        st.subheader("🔍 Резултати от анализа:")
-        
-        found_any = False
-        found_list = []
-        
-        # Търсене на съвпадения
-        for key, description in harmful_ingredients.items():
-            if key in full_text:
-                st.error(f"⚠️ **Намерено: {key}**")
-                st.write(description)
-                found_list.append(key)
-                found_any = True
-        
-        if not found_any:
-            st.success("✅ Не са открити критични вредни съставки от списъка.")
-        
-        # Показване на целия разпознат текст (по избор)
-        with st.expander("Виж целия разпознат текст"):
-            st.text(full_text)
+    for ingredient in HARMFUL_INGREDIENTS:
+        if ingredient in text_lower:
+            found_harmful.append(ingredient)
+            
+    return found_harmful
 
-        # 3. Алтернативи
-        if found_any:
-            st.info("💡 **Здравословни алтернативи:**")
-            st.write("- Избирайте продукти с по-кратък списък от съставки.")
-            st.write("- Търсете био продукти без синтетични консерванти.")
-            st.write("- Заменете преработените меса с прясно изпечено месо.")
+# 4. Основен интерфейс на Streamlit
+st.set_page_config(page_title="Скенер за етикети", page_icon="🔍", layout="centered")
 
-st.sidebar.markdown("### Проект: Химия на храните\nИзработено с Python & EasyOCR")
+st.title("🔍 Скенер за вредни съставки")
+st.write("Снимай или качи снимка на етикета със съставките, за да провериш за наличието на вредни добавки.")
+
+# Избор на метод за добавяне на снимка
+option = st.radio("Как искаш да добавиш снимката?", ("Качване на файл", "Снимка от камерата"))
+
+image_file = None
+
+if option == "Качване на файл":
+    image_file = st.file_uploader("Избери снимка (JPG, PNG)", type=["jpg", "jpeg", "png"])
+else:
+    image_file = st.camera_input("Направи снимка на етикета")
+
+# Ако потребителят е предоставил снимка
+if image_file is not None:
+    # Отваряне и показване на снимката
+    image = Image.open(image_file)
+    st.image(image, caption="Заредена снимка", use_container_width=True)
+    
+    with st.spinner("Анализиране на текста... моля, изчакайте (може да отнеме няколко секунди)."):
+        # Преобразуване на изображението в numpy масив, както изисква EasyOCR
+        img_array = np.array(image)
+        
+        # Извличане на текста (detail=0 връща само списък със стрингове, без координати)
+        results = reader.readtext(img_array, detail=0)
+        
+        st.divider()
+        
+        # Показване на извлечения текст (полезно за проверка дали OCR се е справил добре)
+        with st.expander("Виж извлечения текст (Raw Text)"):
+            full_text = " ".join(results)
+            st.write(full_text)
+        
+        # Анализ за вредни съставки
+        st.subheader("Резултати от анализа:")
+        harmful_found = analyze_text(results)
+        
+        if harmful_found:
+            st.error("⚠️ **Внимание! Открити са следните потенциално вредни съставки:**")
+            # Използваме set(), за да премахнем дубликати, ако съставката е спомената два пъти
+            for item in set(harmful_found):
+                st.write(f"- {item.capitalize()}")
+        else:
+            if len(results) == 0:
+                st.warning("Не беше открит никакъв текст на снимката. Опитай да снимаш по-отблизо или на по-добра светлина.")
+            else:
+                st.success("✅ Не са открити познати вредни съставки от нашия списък!")
+                
+st.markdown("---")
+st.caption("ℹ️ **Забележка:** Този инструмент използва изкуствен интелект (OCR) за четене на текста и може да допуска грешки, особено при размазани снимки или дребен шрифт. Списъкът с вредни съставки не е изчерпателен. Винаги четете етикета лично!")
